@@ -933,7 +933,7 @@ def script(obj, optimize=None, _frames_up=0, _rcb=None):
         if _rcb is None:
             _rcb = _jit_internal.createResolutionCallbackFromClosure(obj)
         fn = torch._C._jit_script_compile(
-            qualified_name, ast, _rcb, get_default_args(obj)
+            qualified_name, ast, _rcb,
         )
         # Forward docstrings
         fn.__doc__ = obj.__doc__

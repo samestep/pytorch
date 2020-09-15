@@ -104,6 +104,13 @@ void initTreeViewBindings(PyObject* module) {
         return self.source_->text();
       });
 
+  py::enum_<TokenKind>(m, "TokenKind")
+      .value("ListLiteralKind", TK_LIST_LITERAL)
+      .value("DictLiteralKind", TK_DICT_LITERAL)
+      .value("TupleLiteralKind", TK_TUPLE_LITERAL)
+      .value("VarKind", TK_VAR)
+      .export_values();
+
   py::class_<TreeView>(m, "TreeView")
       .def("range", &TreeView::range)
       .def(
@@ -113,6 +120,7 @@ void initTreeViewBindings(PyObject* module) {
             stream << tree.get();
             return stream.str();
           })
+      .def("kind", [](const TreeView& tree) { return tree.kind(); })
       .def("dump", [](const TreeView& tree) { tree.dump(); });
 
   py::class_<Ident, TreeView>(m, "Ident")
@@ -129,6 +137,17 @@ void initTreeViewBindings(PyObject* module) {
             Maybe<Expr>::create(name.range()),
             kwarg_only);
       }))
+      .def(py::init([](const Expr& type,
+                       const Expr& default_value,
+                       const Ident& name,
+                       bool kwarg_only) {
+        return Param::create(
+            name.range(),
+            name,
+            Maybe<Expr>::create(type.range(), type),
+            Maybe<Expr>::create(default_value.range(), default_value),
+            kwarg_only);
+      }))
       .def(py::init(
           [](const Maybe<Expr>& type, const Ident& name, bool kwarg_only) {
             return Param::create(
@@ -137,7 +156,18 @@ void initTreeViewBindings(PyObject* module) {
                 type,
                 Maybe<Expr>::create(name.range()),
                 kwarg_only);
-          }));
+          }))
+      .def(py::init([](const Maybe<Expr>& type,
+                       const Expr& default_value,
+                       const Ident& name,
+                       bool kwarg_only) {
+        return Param::create(
+            name.range(),
+            name,
+            type,
+            Maybe<Expr>::create(default_value.range(), default_value),
+            kwarg_only);
+      }));
   py::class_<Attribute, TreeView>(m, "Attribute")
       .def(py::init([](const Ident& name, const Expr& value) {
         return Attribute::create(name.range(), name, value);
@@ -356,7 +386,16 @@ void initTreeViewBindings(PyObject* module) {
   py::class_<TupleLiteral, Expr>(m, "TupleLiteral")
       .def(py::init([](const SourceRange& range, std::vector<Expr> args) {
         return TupleLiteral::create(range, wrap_list(range, std::move(args)));
-      }));
+      }))
+      .def("inputs", [](const TupleLiteral& tuple) {
+        auto tuple_inputs = tuple.inputs();
+        std::vector<Expr> v;
+        v.reserve(tuple_inputs.size());
+        for (const auto& expr : tuple_inputs) {
+          v.emplace_back(expr);
+        }
+        return v;
+      });
   py::class_<DictLiteral, Expr>(m, "DictLiteral")
       .def(py::init([](const SourceRange& range,
                        std::vector<Expr> keys,

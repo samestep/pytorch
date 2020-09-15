@@ -7,7 +7,7 @@ import warnings
 from typing import Dict, List, Set, Type
 
 import torch._jit_internal as _jit_internal
-from torch.jit.frontend import get_default_args, get_jit_def, get_class_properties
+from torch.jit.frontend import get_jit_def, get_class_properties
 from torch.jit._builtins import _find_builtin
 from torch.nn import Module
 from torch._six import get_function_from_type, bind_method
@@ -283,12 +283,11 @@ concrete_type_store = ConcreteTypeStore()
 def create_methods_and_properties_from_stubs(concrete_type, method_stubs, property_stubs):
     method_defs = [m.def_ for m in method_stubs]
     method_rcbs = [m.resolution_callback for m in method_stubs]
-    method_defaults = [get_default_args(m.original_method) for m in method_stubs]
 
     property_defs = [p.def_ for p in property_stubs]
     property_rcbs = [p.resolution_callback for p in property_stubs]
 
-    concrete_type._create_methods_and_properties(property_defs, property_rcbs, method_defs, method_rcbs, method_defaults)
+    concrete_type._create_methods_and_properties(property_defs, property_rcbs, method_defs, method_rcbs)
 
 
 def get_module_concrete_type(nn_module, share_types=True):

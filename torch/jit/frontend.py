@@ -12,7 +12,7 @@ from torch._C._jit_tree_views import (
     TrueLiteral, FalseLiteral, NoneLiteral, Starred,
     ListLiteral, TupleLiteral, DictLiteral, Const,
     StringLiteral, ListComp, Attribute, BinOp, UnaryOp,
-    SliceExpr, Subscript, TernaryIf, With, WithItem, Property,
+    SliceExpr, Subscript, TokenKind, TernaryIf, With, WithItem, Property,
 )
 from torch._utils_internal import get_source_lines_and_file
 
@@ -164,10 +164,10 @@ def get_jit_class_def(cls, self_name):
         and not is_static_fn(cls, m.__name__)
         and m.__name__ in cls.__dict__
     )
+
     methods = [get_jit_def(method[1],
                            method[0],
                            self_name=self_name) for method in methods]
-
     properties = get_class_properties(cls, self_name)
 
     sourcelines, file_lineno, filename = get_source_lines_and_file(cls, torch._C.ErrorReport.call_stack())
@@ -275,12 +275,35 @@ def build_param_list(ctx, py_args, self_name):
             if arg is not None:
                 ctx_range = build_expr(ctx, arg).range()
                 raise NotSupportedError(ctx_range, _vararg_kwarg_err)
-    result = [build_param(ctx, arg, self_name, False) for arg in py_args.args]
-    result += [build_param(ctx, arg, self_name, True) for arg in py_args.kwonlyargs]
+
+    padded_arg_defaults = [None] * (len(py_args.args) - len(py_args.defaults)) + py_args.defaults
+    args_with_defaults = zip(py_args.args, padded_arg_defaults)
+    padded_kw_arg_defaults = [None] * (len(py_args.kwonlyargs) - len(py_args.kw_defaults)) + py_args.kw_defaults
+    kwonlyargs_with_defaults = zip(py_args.kwonlyargs, padded_kw_arg_defaults)
+    result = [build_param(ctx, arg[0], self_name, False, arg[1]) for arg in args_with_defaults]
+    result += [build_param(ctx, arg[0], self_name, True, arg[1]) for arg in kwonlyargs_with_defaults]
+
     return result
 
 
-def build_param(ctx, py_arg, self_name, kwarg_only):
+def valid_default_value_expr(expr):
+    """
+    Check whether the given default value expression is valid. For it to be valid,
+    it cannot be a list or dict literal (because those are mutable) and cannot be a
+    variable (because those cannot be properly closed over).
+    """
+    is_valid = not (expr.kind() == TokenKind.ListLiteralKind or expr.kind() == TokenKind.DictLiteralKind)
+    is_valid &= not expr.kind() == TokenKind.VarKind
+
+    # If expr is a tuple literal, recursively process each tuple element to check that it is valid.
+    if expr.kind() == TokenKind.TupleLiteralKind:
+        for elem in expr.inputs():
+            is_valid &= valid_default_value_expr(elem)
+
+    return is_valid
+
+
+def build_param(ctx, py_arg, self_name, kwarg_only, default_value=None):
     # NB: In Python3 py_arg is a pair of (str arg, expr? annotation)
     name = py_arg.arg
     r = ctx.make_range(py_arg.lineno, py_arg.col_offset, py_arg.col_offset + len(name))
@@ -290,6 +313,15 @@ def build_param(ctx, py_arg, self_name, kwarg_only):
         annotation_expr = Var(Ident(r, self_name))
     else:
         annotation_expr = EmptyTypeAnnotation(r)
+
+    # Create the appropriate TreeView for the default value if there is one.
+    if default_value:
+        default_value_expr = build_expr(ctx, default_value)
+        if valid_default_value_expr(default_value_expr):
+            return Param(annotation_expr, default_value_expr, Ident(r, name), kwarg_only)
+        else:
+            raise FrontendError(default_value_expr.range(), f'Invalid default value for argument {name}')
+
     return Param(annotation_expr, Ident(r, name), kwarg_only)
 
 
