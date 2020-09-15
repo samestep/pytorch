@@ -70,7 +70,7 @@ public:
     return (repr_ & ks.repr_) == ks.repr_;
   }
   // Perform set union
-  DispatchKeySet operator|(DispatchKeySet other) const {
+  constexpr DispatchKeySet operator|(DispatchKeySet other) const {
     return DispatchKeySet(repr_ | other.repr_);
   }
   // Perform set intersection
@@ -118,7 +118,7 @@ public:
       .highestPriorityTypeId();
   }
 private:
-  DispatchKeySet(uint64_t repr) : repr_(repr) {}
+  constexpr DispatchKeySet(uint64_t repr) : repr_(repr) {}
   uint64_t repr_ = 0;
 
 public:
